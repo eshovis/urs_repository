@@ -1,0 +1,150 @@
+---
+title: "URSProject_DataCleaning"
+output: html_document
+date: "2024-07-31"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+Import survey data:
+
+```{r}
+
+library(readr)
+
+URSTest_Data <- read_csv("C:/Users/ehovis/Desktop/PROF. DEV/TRAININGS/DASEH Coding Workshop/Code-A-Thon Projects/Rodent Survey Form_TestData.csv")
+View(URSTest_Data)
+
+```
+
+Create two new columns, one for State with the value 53, and County with the value 033. Use "" around the numbers to make sure that this is character data and not numeric.
+
+```{r}
+library(tidyr)
+
+URSTest_Data <- URSTest_Data %>%
+  mutate("State" = "53") %>%
+  mutate("County" = "033")
+
+```
+
+Transform data from Census Tract and Census Block columns from numberic into character data
+
+```{r}
+
+URSTest_Data <- URSTest_Data %>%
+  mutate(`Census Tract`= as.character(`Census Tract`)) %>%
+  mutate(`Census Block (using format XXXX)`= as.character(`Census Block (using format XXXX)`))
+
+```
+
+Move Census Tract an Census Block columns to be after State and County columns
+
+```{r}
+
+URSTest_Data <- URSTest_Data %>%
+  relocate(`Census Tract`:`Census Block (using format XXXX)`, .before = NULL, .after = County)
+
+```
+
+Combine state, county, tract and block columns into one new column called "geocode". Keep old columns. (If you want to remove old columns, change remove=FALSE to remove=TRUE)
+
+```{r}
+
+URS_data <- URSTest_Data %>%
+  unite(GEOID20, "State":"County":"Census Tract", "Census Block (using format XXXX)", sep = "", remove = FALSE, na.rm = FALSE)
+
+```
+
+Create new column that combines rows that have the same GEOID20# and the same ARS severity#, then add up ARS severity numbers for each of the three severity types (ARS1, ARS2, ARS3)
+
+Updated: Create new dataset that combines rows that have the same GEOID20# and the same ARS severity#, then add up ARS severity numbers for each of the three severity types (ARS1, ARS2, ARS3). Removes all other data, essentially making this block level data instead of the premise level data
+
+URS_data_severity <- aggregate(URS_data$`Premise ARS Severity`, list(URS_data$GEOID20), FUN=sum)
+
+# above code gets me the sum of ARS signs in each census block (GEOID20), however, I need to figure out how to filter each severity category and sum those...
+
+```{r}
+
+#creates new column with ARS1 count for each census block
+
+URS_data_ARS1 <- URS_data %>%
+  filter(`Premise ARS Severity`==1) %>%
+  group_by(`GEOID20`) %>%
+  mutate(ARS1=n())
+
+#creates new dataset(object) for each ARS category using summarize function. Mutate function is used to convert ARS column numerical data to character data.
+
+URS_data_ARS1 <- URS_data %>%
+  filter(`Premise ARS Severity`==1) %>%
+  group_by(`GEOID20`) %>%
+  summarize(ARS1=n()) %>%
+  mutate(ARS1=as.character(ARS1))
+
+URS_data_ARS2 <- URS_data %>%
+  filter(`Premise ARS Severity`==2) %>%
+  group_by(`GEOID20`) %>%
+  summarize(ARS2=n()) %>%
+  mutate(ARS2=as.character(ARS2))
+
+URS_data_ARS3 <- URS_data %>%
+  filter(`Premise ARS Severity`==3) %>%
+  group_by(`GEOID20`) %>%
+  summarize(ARS3=n()) %>%
+  mutate(ARS3=as.character(ARS3))
+
+fj_URSdata<-full_join(URS_data_ARS1, URS_data_ARS2, by="GEOID20") %>%
+  full_join(URS_data_ARS3, by="GEOID20")
+
+```
+
+Create indexing score column using formula from Indexing Methodology Table C.
+
+```{r}
+#create new column for ARS1 indexing formula using Table C.
+
+URSdata_IndexScore <- fj_URSdata %>%
+  mutate(IndexFormulaARS1=case_when(
+    ARS1 == 0 ~ 0,
+    ARS1 %in% 1:5 ~ 1,
+    ARS1 %in% 6:10 ~2,
+    ARS1 >= 11 ~ 3,
+  TRUE~0))
+
+#create new column for ARS2 indexing formula using Table C.
+
+URSdata_IndexScore <- URSdata_IndexScore %>%
+  mutate(IndexFormulaARS2=case_when(
+    ARS2 == 0 ~ 0,
+    ARS2 %in% 1:2 ~ 1,
+    ARS2 %in% 3:5 ~4,
+    ARS2 >= 6 ~ 6,
+  TRUE~0))
+
+#create new column for ARS3 indexing formula using Table C.
+
+URSdata_IndexScore <- URSdata_IndexScore %>%
+  mutate(IndexFormulaARS3=case_when(
+    ARS3 == 0 ~ 0,
+    ARS3 %in% 1:2 ~ 2,
+    ARS3 %in% 3:5 ~6,
+    ARS3 >= 6 ~ 8,
+  TRUE~0))
+
+```
+
+Create new column for Indexing Score that adds together columns ARS1, ARS2, and ARS 3 by GEOCODE20
+
+```{r}
+URSdata_Index <- URSdata_IndexScore %>%
+  mutate(IndexScore=IndexFormulaARS1 + IndexFormulaARS2 + IndexFormulaARS3)
+```
+
