@@ -60,7 +60,9 @@ Combine state, county, tract and block columns into one new column called "geoco
 ```{r}
 
 URS_data <- URSTest_Data %>%
-  unite(GEOID20, "State":"County":"Census Tract", "Census Block (using format XXXX)", sep = "", remove = FALSE, na.rm = FALSE)
+  dplyr::rename(TRACTCE20 = "Census Tract")%>%
+  mutate(TRACTCE20 = paste0("00",TRACTCE20)) %>%
+  unite(GEOID20, "State":"County":TRACTCE20, "Census Block (using format XXXX)", sep = "", remove = FALSE, na.rm = FALSE)
 
 ```
 
@@ -148,3 +150,53 @@ URSdata_Index <- URSdata_IndexScore %>%
   mutate(IndexScore=IndexFormulaARS1 + IndexFormulaARS2 + IndexFormulaARS3)
 ```
 
+Create a function that maps the study area
+
+```{r}
+
+library(tigris)
+library(tidyverse)
+
+wa_counties <- counties("WA")
+
+king_tracts <- tracts("WA", "King")
+
+king_blocks <- blocks("WA", "King")
+
+#Create a simple map of census blocks in the study area near campus.
+study_area_blocks <- king_blocks %>% filter(TRACTCE20 %in% c("005304", "005303", "005306", "005202", "005201", "005307", "004401", "004402", "004202", "004500", "005305", "004302", "004301"))
+
+plot(study_area_blocks$geometry)
+
+#plot census blocks using ggplot
+
+library(ggplot2)
+library(sf)
+library(mapview)
+
+ggplot(data=study_area_blocks) +
+  geom_sf()
+
+```
+
+
+Combine study area blocks dataset with indexing results data
+
+```{r}
+
+fj<-full_join(study_area_blocks, URSdata_Index)
+
+count(fj, IndexScore)
+```
+
+Map indexing results data (column "indexing score") on the study area map
+
+```{r}
+#Used code from Census Code to fill in map, data is the combined data, fill is the indexing score with a "heat" color scale (yellow -> red)
+ggplot() + 
+  geom_sf(data = fj, aes(fill = IndexScore)) +
+  scale_fill_viridis_c() + 
+  theme_bw(base_size = 16) +
+  NULL
+
+```
